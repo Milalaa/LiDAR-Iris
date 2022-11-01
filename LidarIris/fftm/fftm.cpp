@@ -22,19 +22,55 @@ void Recomb(Mat &src, Mat &dst)
 //----------------------------------------------------------
 // 2D Forward FFT
 //----------------------------------------------------------
-void ForwardFFT(Mat &Src, Mat *FImg, bool do_recomb = true)
+void ForwardFFT(Mat &Src, Mat *FImg, )
 {
-    int M = getOptimalDFTSize(Src.rows);
-    int N = getOptimalDFTSize(Src.cols);
+    //    将输入图像扩展到最佳尺寸，边界用0填充
+    //    离散傅里叶变换的运行速度与图像的大小有很大的关系，当图像的尺寸使2，3，5的整数倍时，计算速度最快
+    //    为了达到快速计算的目的，经常通过添加新的边缘像素的方法获取最佳图像尺寸
+    //    函数getOptimalDFTSize()用于返回最佳尺寸，copyMakeBorder()用于填充边缘像素
+    int M = getOptimalDFTSize(Src.rows);    // 返回行的最佳尺寸
+    int N = getOptimalDFTSize(Src.cols);    // 返回列的最佳尺寸
     Mat padded;
+    /* void copyMakeBorder(InputArray  src,        //输入图像
+		    OutputArray dst,        //输出图像
+		    int top,                //上边界添加的像素行数
+		    int bottom,             //下边界添加的像素行数
+		    int left,               //左边界添加的像素列数
+		    int right,              //右边界添加的像素列数
+		    int borderType,         //表示边界的类型
+		    const Scalar& value=Scalar()//表示如果边界的类型是BORDER_CONSTANT时边界的颜色值 )
+            BORDER_CONSTANT:常量复制：          iiiiii|abcdefgh|iiiiiii(i的值由最后一个参数 const Scalar& value=Scalar()确定，如Scalar::all(0) )*/
     copyMakeBorder(Src, padded, 0, M - Src.rows, 0, N - Src.cols, BORDER_CONSTANT, Scalar::all(0));
+    
+    //    为傅立叶变换的结果分配存储空间
+    //    将plannes数组组合成一个多通道的数组，两个同搭配，分别保存实部和虚部
+    //    傅里叶变换的结果是复数，这就是说对于每个图像原像素值，会有两个图像值
+    //    此外，频域值范围远远超过图象值范围，因此至少将频域储存在float中
+    //    所以我们将输入图像转换成浮点型，并且多加一个额外通道来存储复数部分
+    //   CV_32F - 32位浮点数
     Mat planes[] = { Mat_<float>(padded), Mat::zeros(padded.size(), CV_32F) };
     Mat complexImg;
+    //  merge将多个阵列合并为一个多通道阵列。也就是说，输出数组的每个元素都是输入数组元素的串联，其中第i个输入数组的元素被视为mv[i]。
+    /* CV_EXPORTS void merge(const Mat* mv, size_t count, OutputArray dst);
+         mv 要合并的矩阵输入数组；mv中的所有矩阵必须具有相同的大小和深度。
+         count 当mv是纯C数组时，计数输入矩阵的数目；它必须大于零。
+         dst 输出数组，大小和深度与mv[0]相同；通道数将等于参数计数。*/
     merge(planes, 2, complexImg);
+    
+    //    进行离散傅立叶变换
+    //    CV_EXPORTS_W void dft(InputArray src, OutputArray dst, int flags = 0, int nonzeroRows = 0);
     dft(complexImg, complexImg);
+    
+    //    将复数转化为幅值
+    /*     CV_EXPORTS void split(const Mat& src, Mat* mvbegin);
+            src 输入多通道阵列
+            mvbegin 输出数组；数组的数目必须与src匹配。如果需要，阵列本身会被重新分配。
+    */
     split(complexImg, planes);
-    planes[0] = planes[0](Rect(0, 0, planes[0].cols & -2, planes[0].rows & -2));
-    planes[1] = planes[1](Rect(0, 0, planes[1].cols & -2, planes[1].rows & -2));
+    //剪切和重分布幅度图像限
+	//如果有奇数行或奇数列，进行频谱裁剪
+    planes[0] = planes[0](Rect(0, 0, planes[0].cols & -2, planes[0].rows & -2));    // Re
+    planes[1] = planes[1](Rect(0, 0, planes[1].cols & -2, planes[1].rows & -2));    // Im
     if (do_recomb)
     {
         Recomb(planes[0], planes[0]);
